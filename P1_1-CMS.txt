@@ -1,0 +1,4 @@
+2301234|Joshua Chen|Software Engineering|70.50
+2201234|Isaac Teo|Computer Science|63.40
+2304567|John Levoy|Digital Supply Chain|85.90
+2401234|Michelle Lee|Applied AI|69.80
