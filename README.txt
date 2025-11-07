@@ -1,38 +1,58 @@
-# INF1002 CMS — v2 (P10-09)
+# INF1002 CMS — v2 (Group P10-09)
 
-Upgrades in this version:
-- **SET AUTOSAVE ON|OFF** (OFF by default; saves after INSERT/UPDATE/DELETE/UNDO)
-- **FIND NAME="<keyword>"** (case-insensitive substring)
-- **SHOW SUMMARY** adds grade bands: A≥80, B≥70, C≥60, D≥50, F<50
-- **Validation:** ID>0, 0≤Mark≤100
-- **Formatting:** marks printed with 2 d.p.; clearer OPEN/new-file messages
-- Declaration pre-filled with **Group P10-09** and member names.
+**Team:** P10-09 — David Yong Jing Xiang, Amal Nadiy, Lim Kai Hin, Liaw Jun De
 
-## Files
-- `cms.c` — full source
-- `P10-09-CMS.txt` — sample database for your group
+Single-file C99 CMS with enhancements and a unique UNDO feature.
+
+## New in v2
+- `SET AUTOSAVE ON|OFF` (default OFF)
+- `FIND NAME="keyword"` search (case-insensitive substring)
+- Grade bands in `SHOW SUMMARY` (A/B/C/D/F)
+- Numeric validation: ID>0, Mark ∈ [0,100]
+- Marks shown with **2 d.p.** and clearer OPEN/SAVE messages
 
 ## Build
-Windows (GCC):
 ```bash
-gcc -std=c99 -O2 cms.c -o cms.exe
-.\cms.exe
-```
-macOS/Linux:
-```bash
-gcc -std=c99 -O2 cms.c -o cms
-./cms
+gcc -std=c99 -O2 cms.c -o cms      # macOS/Linux
+# or
+gcc -std=c99 -O2 cms.c -o cms.exe  # Windows
 ```
 
-## Quick demo
+## Quick Start
 ```
 OPEN P10-09
 SET AUTOSAVE ON
 SHOW ALL
-FIND NAME="isaac"
-INSERT ID=2401234 Name="Michelle Lee" Programme="Information Security" Mark=73.2
-UPDATE ID=2401234 Programme="Applied AI" Mark=69.8
+INSERT ID=250001 Name="Alice Tan" Programme="SE" Mark=88
+FIND NAME="alice"
 SHOW SUMMARY
 SAVE
 EXIT
 ```
+
+## Commands
+```
+OPEN <TeamName>
+SHOW ALL [SORT BY ID|MARK [ASC|DESC]]
+SHOW SUMMARY
+INSERT ID=<int> Name="<str>" Programme="<str>" Mark=<float(0..100)>
+QUERY  ID=<int>
+UPDATE ID=<int> [Name="<str>"] [Programme="<str>"] [Mark=<float(0..100)>]
+DELETE ID=<int>
+FIND NAME="<keyword>"
+SET AUTOSAVE ON|OFF
+SAVE
+UNDO
+HELP
+EXIT
+```
+
+## File Format
+`<TeamName>-CMS.txt` with pipe separators: `ID|Name|Programme|Mark`
+
+## Notes for your report
+- Data structure: static array of `struct Student` (10,000 cap)
+- Parsing: tolerant key-value, quoted strings allow spaces
+- Sorting: `qsort` comparators; deterministic tie-break by ID
+- Unique: `UNDO` stack (depth 128)
+- Input validation for IDs/Marks; friendly errors

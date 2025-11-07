@@ -1,0 +1,10 @@
+OPEN P10-09
+SET AUTOSAVE ON
+SHOW ALL
+INSERT ID=2400001 Name="Test User" Programme="Test Programme" Mark=77.5
+FIND NAME="test"
+QUERY ID=2400001
+UPDATE ID=2400001 Programme="Updated Programme" Mark=66.6
+SHOW SUMMARY
+SAVE
+EXIT
