@@ -18,6 +18,16 @@ gcc -std=c99 -O2 cms.c -o cms      # macOS/Linux
 gcc -std=c99 -O2 cms.c -o cms.exe  # Windows
 ```
 
+## Run
+# macOS/Linux:
+```bash
+./cms
+
+# Windows:
+```bash
+cms.exe
+
+
 ## Quick Start
 ```
 OPEN P10-09
