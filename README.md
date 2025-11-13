@@ -13,20 +13,19 @@ Single-file C99 CMS with enhancements and a unique UNDO feature.
 
 ## Build
 ```bash
-gcc -std=c99 -O2 cms.c -o cms      # macOS/Linux
-# or
-gcc -std=c99 -O2 cms.c -o cms.exe  # Windows
+# macOS/Linux
+gcc -std=c99 -O2 cms.c -o cms      
+# Windows
+gcc -std=c99 -O2 cms.c -o cms.exe  
 ```
 
 ## Run
+```bash
 # macOS/Linux:
-```bash
 ./cms
-
 # Windows:
-```bash
 cms.exe
-
+```
 
 ## Quick Start
 ```
