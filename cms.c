@@ -115,6 +115,14 @@ static int cmp_mark_asc(const void* a, const void* b) {
 }
 static int cmp_mark_desc(const void* a, const void* b) { return -cmp_mark_asc(a,b); }
 
+static int cmp_programme_asc(const void* a, const void* b) {
+    const Student* x = (const Student*)a;
+    const Student* y = (const Student*)b;
+    return strcmp(x->programme, y->programme);
+}
+static int cmp_programme_desc(const void* a, const void* b) { return -cmp_programme_asc(a,b); }
+
+
 static int find_index_by_id(int id) {
     for (int i=0;i<n_records;++i) if (records[i].id==id) return i;
     return -1;
@@ -214,9 +222,11 @@ static void cmd_show_all(const char* args) {
         strtoupper_inplace(up);
         if (strstr(up,"SORT BY ID")) sort_by=1;
         else if (strstr(up,"SORT BY MARK")) sort_by=2;
+        else if (strstr(up,"SORT BY PROGRAMME")) sort_by=3;
         if (strstr(up,"DESC")) desc=1;
         if (sort_by==1) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_id_desc:cmp_id_asc);
         else if (sort_by==2) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_mark_desc:cmp_mark_asc);
+        else if (sort_by==3) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_programme_desc:cmp_programme_asc);
     }
     printf("CMS: Here are all the records found in the table \"StudentRecords\" (%d total).\n", n_records);
     print_record_header();
@@ -277,6 +287,53 @@ static int parse_and_validate_mark(const char* line, float* out_mark) {
     if (m<0.0f || m>100.0f) return -1;
     *out_mark = m; return 1;
 }
+
+
+static void cmd_show_programme_summary(void) {
+    if (n_records==0) {
+        printf("CMS: No records loaded.\n");
+        return;
+    }
+    typedef struct {
+        char programme[MAX_PROG];
+        int count;
+        float total_mark;
+    } ProgrammeSummary;
+
+    ProgrammeSummary ps[256];
+    int n_prog = 0;
+
+    for (int i=0; i<n_records; ++i) {
+        int idx = -1;
+        for (int j=0; j<n_prog; ++j) {
+            if (strcmp(ps[j].programme, records[i].programme) == 0) {
+                idx = j;
+                break;
+            }
+        }
+        if (idx == -1) {
+            if (n_prog >= (int)(sizeof(ps)/sizeof(ps[0]))) {
+                continue; /* safety guard, should not happen for typical datasets */
+            }
+            idx = n_prog++;
+            strncpy(ps[idx].programme, records[i].programme, MAX_PROG-1);
+            ps[idx].programme[MAX_PROG-1] = '\0';
+            ps[idx].count = 0;
+            ps[idx].total_mark = 0.0f;
+        }
+        ps[idx].count += 1;
+        ps[idx].total_mark += records[i].mark;
+    }
+
+    printf("CMS: Programme summary (per programme):\n");
+    printf("%-30s %-10s %-10s\n", "Programme", "Count", "AvgMark");
+    printf("--------------------------------------------------------------\n");
+    for (int i=0; i<n_prog; ++i) {
+        float avg = ps[i].total_mark / (float)ps[i].count;
+        printf("%-30s %-10d %-10.2f\n", ps[i].programme, ps[i].count, avg);
+    }
+}
+
 
 static void cmd_insert(const char* line) {
     int id; int id_ok = parse_and_validate_id(line,&id);
@@ -373,32 +430,60 @@ static void cmd_undo(void) {
     maybe_autosave();
 }
 
+
 static void cmd_find_name(const char* line) {
-    char key[MAX_NAME];
-    if (!parse_between(line,"NAME",key,sizeof(key))) { printf("CMS: Provide NAME keyword, e.g., FIND NAME=\"michelle\".\n"); return; }
-    char key_lc[MAX_NAME]; strncpy(key_lc,key,sizeof(key_lc)-1); key_lc[sizeof(key_lc)-1]=0;
-    for (char* p=key_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
-    int found=0;
-    printf("CMS: Search results for name contains \"%s\":\n", key);
-    print_record_header();
-    for (int i=0;i<n_records;++i) {
-        char name_lc[MAX_NAME]; strncpy(name_lc,records[i].name,sizeof(name_lc)-1); name_lc[sizeof(name_lc)-1]=0;
-        for (char* p=name_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
-        if (strstr(name_lc,key_lc)) { print_record(&records[i]); found=1; }
+    char key_name[MAX_NAME];
+    char key_prog[MAX_PROG];
+    int has_name = parse_between(line,"NAME",key_name,sizeof(key_name));
+    int has_prog = parse_between(line,"PROGRAMME",key_prog,sizeof(key_prog));
+
+    if (!has_name && !has_prog) {
+        printf("CMS: Please provide NAME or PROGRAMME keyword, e.g., FIND NAME=\"michelle\" or FIND PROGRAMME=\"Digital Supply Chain\".\n");
+        return;
     }
-    if (!found) printf("(no matches)\n");
+
+    if (has_name) {
+        char key_lc[MAX_NAME]; strncpy(key_lc,key_name,sizeof(key_lc)-1); key_lc[sizeof(key_lc)-1]=0;
+        for (char* p=key_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
+        int found=0;
+        printf("CMS: Search results for name contains \"%s\":\n", key_name);
+        print_record_header();
+        for (int i=0;i<n_records;++i) {
+            char name_lc[MAX_NAME]; strncpy(name_lc,records[i].name,sizeof(name_lc)-1); name_lc[sizeof(name_lc)-1]=0;
+            for (char* p=name_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
+            if (strstr(name_lc,key_lc)) { print_record(&records[i]); found=1; }
+        }
+        if (!found) printf("(no matches)\n");
+        return;
+    }
+
+    if (has_prog) {
+        char key_lc[MAX_PROG]; strncpy(key_lc,key_prog,sizeof(key_lc)-1); key_lc[sizeof(key_lc)-1]=0;
+        for (char* p=key_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
+        int found=0;
+        printf("CMS: Search results for programme contains \"%s\":\n", key_prog);
+        print_record_header();
+        for (int i=0;i<n_records;++i) {
+            char prog_lc[MAX_PROG]; strncpy(prog_lc,records[i].programme,sizeof(prog_lc)-1); prog_lc[sizeof(prog_lc)-1]=0;
+            for (char* p=prog_lc; *p; ++p) *p=(char)tolower((unsigned char)*p);
+            if (strstr(prog_lc,key_lc)) { print_record(&records[i]); found=1; }
+        }
+        if (!found) printf("(no matches)\n");
+    }
 }
 
 static void cmd_help(void) {
     printf("Available commands:\n");
     printf("  OPEN <TeamName>\n");
-    printf("  SHOW ALL [SORT BY ID|MARK [ASC|DESC]]\n");
+    printf("  SHOW ALL [SORT BY ID|MARK|PROGRAMME [ASC|DESC]]\n");
     printf("  SHOW SUMMARY\n");
+    printf("  SHOW PROGRAMME SUMMARY\n");
     printf("  INSERT ID=<int> Name=\"<str>\" Programme=\"<str>\" Mark=<float>\n");
     printf("  QUERY  ID=<int>\n");
     printf("  UPDATE ID=<int> [Name=\"<str>\"] [Programme=\"<str>\"] [Mark=<float> (0..100)]\n");
     printf("  DELETE ID=<int>\n");
     printf("  FIND NAME=\"<keyword>\"\n");
+    printf("  FIND PROGRAMME=\"<keyword>\"\n");
     printf("  SET AUTOSAVE ON|OFF\n");
     printf("  SAVE\n");
     printf("  UNDO\n");
@@ -439,6 +524,8 @@ int main(void) {
             }
         } else if (strncmp(up,"SHOW ALL",8)==0) {
             char* args = cmd+8; cmd_show_all(args);
+        } else if (strncmp(up,"SHOW PROGRAMME SUMMARY",22)==0) {
+            cmd_show_programme_summary();
         } else if (strncmp(up,"SHOW SUMMARY",12)==0) {
             cmd_show_summary();
         } else if (strncmp(up,"INSERT",6)==0) {
