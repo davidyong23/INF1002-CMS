@@ -24,7 +24,7 @@ gcc -std=c99 -O2 cms.c -o cms.exe
 # macOS/Linux:
 ./cms
 # Windows:
-cms.exe
+./cms.exe
 ```
 
 ## Quick Start
