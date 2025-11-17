@@ -33,7 +33,8 @@ OPEN P10-09
 SET AUTOSAVE ON
 SHOW ALL
 INSERT ID=250001 Name="Alice Tan" Programme="SE" Mark=88
-FIND NAME="alice"
+FIND NAME="Alice"
+FIND PROGRAMME="SE"
 SHOW SUMMARY
 SAVE
 EXIT
@@ -42,13 +43,15 @@ EXIT
 ## Commands
 ```
 OPEN <TeamName>
-SHOW ALL [SORT BY ID|MARK [ASC|DESC]]
+SHOW ALL [SORT BY ID|MARK|PROGRAMME [ASC|DESC]]
 SHOW SUMMARY
-INSERT ID=<int> Name="<str>" Programme="<str>" Mark=<float(0..100)>
+SHOW PROGRAMME SUMMARY
+INSERT ID=<int> Name="<str>" Programme="<str>" Mark=<float>
 QUERY  ID=<int>
-UPDATE ID=<int> [Name="<str>"] [Programme="<str>"] [Mark=<float(0..100)>]
+UPDATE ID=<int> [Name="<str>"] [Programme="<str>"] [Mark=<float> (0..100)]
 DELETE ID=<int>
 FIND NAME="<keyword>"
+FIND PROGRAMME="<keyword>"
 SET AUTOSAVE ON|OFF
 SAVE
 UNDO
