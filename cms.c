@@ -67,6 +67,40 @@ static char team_name[128] = "";
 // settings
 static int autosave_on = 0;
 
+// command history
+#define MAX_HISTORY 100
+static char command_history[MAX_HISTORY][MAX_LINE];
+static int history_count = 0;
+
+static void history_add(const char* line) {
+    if (!line || !line[0]) return;
+    if (history_count < MAX_HISTORY) {
+        strncpy(command_history[history_count], line, MAX_LINE-1);
+        command_history[history_count][MAX_LINE-1] = '\0';
+        history_count++;
+    } else {
+        // shift up and append at end
+        for (int i = 1; i < MAX_HISTORY; ++i) {
+            strncpy(command_history[i-1], command_history[i], MAX_LINE-1);
+            command_history[i-1][MAX_LINE-1] = '\0';
+        }
+        strncpy(command_history[MAX_HISTORY-1], line, MAX_LINE-1);
+        command_history[MAX_HISTORY-1][MAX_LINE-1] = '\0';
+    }
+}
+
+static void cmd_history(void) {
+    if (history_count == 0) {
+        printf("CMS: No commands in history.\n");
+        return;
+    }
+    printf("CMS: Command history (most recent %d):\n", history_count);
+    for (int i = 0; i < history_count; ++i) {
+        printf("%2d: %s\n", i+1, command_history[i]);
+    }
+}
+
+
 static void print_declaration(void) {
     printf("\nDeclaration\n");
     printf("SIT's policy on copying does not allow the students to copy source code as well as assessment solutions\n");
@@ -99,6 +133,23 @@ static void strtoupper_inplace(char* s) {
     for (; *s; ++s) *s = (char)toupper((unsigned char)*s);
 }
 
+static void normalise_caps(char* s) {
+    int new_word = 1;
+    for (char* p = s; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (isalpha(c)) {
+            if (new_word) {
+                *p = (char)toupper(c);
+                new_word = 0;
+            } else {
+                *p = (char)tolower(c);
+            }
+        } else {
+            new_word = isspace(c) ? 1 : 0;
+        }
+    }
+}
+
 static int cmp_id_asc(const void* a, const void* b) {
     const Student* x = (const Student*)a;
     const Student* y = (const Student*)b;
@@ -121,6 +172,14 @@ static int cmp_programme_asc(const void* a, const void* b) {
     return strcmp(x->programme, y->programme);
 }
 static int cmp_programme_desc(const void* a, const void* b) { return -cmp_programme_asc(a,b); }
+
+
+static int cmp_name_asc(const void* a, const void* b) {
+    const Student* x = (const Student*)a;
+    const Student* y = (const Student*)b;
+    return strcmp(x->name, y->name);
+}
+static int cmp_name_desc(const void* a, const void* b) { return -cmp_name_asc(a,b); }
 
 
 static int find_index_by_id(int id) {
@@ -198,6 +257,33 @@ static void push_undo(UndoEntry e) {
     }
 }
 
+static void cmd_export_csv(const char* line) {
+    if (n_records == 0) {
+        printf("CMS: No records loaded. Nothing to export.\n");
+        return;
+    }
+    char filename[256];
+    if (!parse_between(line, "CSV", filename, sizeof(filename))) {
+        printf("CMS: Please specify CSV=\"<filename>\". e.g., EXPORT CSV=\"students.csv\"\n");
+        return;
+    }
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        printf("CMS: Failed to open CSV file '%s' for writing.\n", filename);
+        return;
+    }
+    fprintf(fp, "ID,Name,Programme,Mark\n");
+    for (int i = 0; i < n_records; ++i) {
+        fprintf(fp, "%07d,\"%s\",\"%s\",%.2f\n",
+                records[i].id,
+                records[i].name,
+                records[i].programme,
+                records[i].mark);
+    }
+    fclose(fp);
+    printf("CMS: Exported %d records to '%s'.\n", n_records, filename);
+}
+
 static void maybe_autosave(void) {
     if (autosave_on && db_filename[0]) {
         if (save_db(db_filename)) {
@@ -223,10 +309,12 @@ static void cmd_show_all(const char* args) {
         if (strstr(up,"SORT BY ID")) sort_by=1;
         else if (strstr(up,"SORT BY MARK")) sort_by=2;
         else if (strstr(up,"SORT BY PROGRAMME")) sort_by=3;
+        else if (strstr(up,"SORT BY NAME")) sort_by=4;
         if (strstr(up,"DESC")) desc=1;
         if (sort_by==1) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_id_desc:cmp_id_asc);
         else if (sort_by==2) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_mark_desc:cmp_mark_asc);
         else if (sort_by==3) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_programme_desc:cmp_programme_asc);
+        else if (sort_by==4) qsort(tmp,(size_t)n_records,sizeof(Student), desc?cmp_name_desc:cmp_name_asc);
     }
     printf("CMS: Here are all the records found in the table \"StudentRecords\" (%d total).\n", n_records);
     print_record_header();
@@ -260,24 +348,40 @@ static void cmd_show_summary(void) {
     printf("Grade bands  : A=%d  B=%d  C=%d  D=%d  F=%d\n", A,B,C,D,Fc);
 }
 
+static int parse_and_validate_id(const char* line, int* out_id);
+
 static void cmd_query(const char* line) {
-    char buf[64];
-    if (!parse_between(line,"ID",buf,sizeof(buf))) { printf("CMS: Please provide ID. e.g., QUERY ID=2401234\n"); return; }
-    int id = atoi(buf);
+    int id;
+    int id_ok = parse_and_validate_id(line, &id);
+    if (id_ok <= 0) {
+        printf("CMS: Please provide a valid 7-digit numeric ID. e.g., QUERY ID=2401234\n");
+        return;
+    }
     int idx = find_index_by_id(id);
-    if (idx<0) { printf("CMS: The record with ID=%d does not exist.\n", id); return; }
+    if (idx<0) {
+        printf("CMS: The record with ID=%d does not exist.\n", id);
+        return;
+    }
     printf("CMS: The record with ID=%d is found in the data table.\n", id);
     print_record_header();
     print_record(&records[idx]);
 }
 
+
 static int parse_and_validate_id(const char* line, int* out_id) {
     char s_id[64];
     if (!parse_between(line,"ID",s_id,sizeof(s_id))) return 0;
-    for (char* p=s_id; *p; ++p) if (!isdigit((unsigned char)*p) && *p!='-') { return -1; }
+    size_t len = strlen(s_id);
+    if (len != 7) return -1; // must be exactly 7 digits
+    for (size_t i = 0; i < len; ++i) {
+        if (!isdigit((unsigned char)s_id[i])) {
+            return -1;
+        }
+    }
     int id = atoi(s_id);
-    if (id<=0) return -2;
-    *out_id = id; return 1;
+    if (id <= 0) return -2;
+    *out_id = id;
+    return 1;
 }
 
 static int parse_and_validate_mark(const char* line, float* out_mark) {
@@ -334,10 +438,38 @@ static void cmd_show_programme_summary(void) {
     }
 }
 
+static void cmd_show_programme_exact(const char* line) {
+    if (n_records==0) {
+        printf("CMS: No records loaded.\n");
+        return;
+    }
+    char prog[MAX_PROG];
+    if (!parse_between(line, "PROGRAMME", prog, sizeof(prog))) {
+        printf("CMS: Please specify PROGRAMME=\"<programme name>\". e.g., SHOW PROGRAMME PROGRAMME=\"Applied AI\"\n");
+        return;
+    }
+    char key_lc[MAX_PROG]; strncpy(key_lc, prog, sizeof(key_lc)-1); key_lc[sizeof(key_lc)-1] = '\0';
+    for (char* p = key_lc; *p; ++p) *p = (char)tolower((unsigned char)*p);
+
+    int found = 0;
+    printf("CMS: Students in programme matching \"%s\":\n", prog);
+    print_record_header();
+    for (int i = 0; i < n_records; ++i) {
+        char prog_lc[MAX_PROG]; strncpy(prog_lc, records[i].programme, sizeof(prog_lc)-1); prog_lc[sizeof(prog_lc)-1] = '\0';
+        for (char* p = prog_lc; *p; ++p) *p = (char)tolower((unsigned char)*p);
+        if (strcmp(prog_lc, key_lc) == 0) {
+            print_record(&records[i]);
+            found = 1;
+        }
+    }
+    if (!found) printf("(no exact programme matches)\n");
+}
+
+
 
 static void cmd_insert(const char* line) {
     int id; int id_ok = parse_and_validate_id(line,&id);
-    if (id_ok<=0) { printf("CMS: Please provide a valid positive integer ID.\n"); return; }
+    if (id_ok<=0) { printf("CMS: Please provide a valid 7-digit numeric ID.\n"); return; }
     if (find_index_by_id(id)>=0) { printf("CMS: The record with ID=%d already exists.\n", id); return; }
 
     char s_name[MAX_NAME], s_prog[MAX_PROG];
@@ -349,6 +481,8 @@ static void cmd_insert(const char* line) {
         return;
     }
     if (n_records>=MAX_RECORDS) { printf("CMS: Cannot insert, reached max records.\n"); return; }
+    normalise_caps(s_name);
+    normalise_caps(s_prog);
     Student s; s.id=id;
     strncpy(s.name,s_name,MAX_NAME-1); s.name[MAX_NAME-1]=0;
     strncpy(s.programme,s_prog,MAX_PROG-1); s.programme[MAX_PROG-1]=0;
@@ -362,7 +496,7 @@ static void cmd_insert(const char* line) {
 
 static void cmd_update(const char* line) {
     int id; int id_ok = parse_and_validate_id(line,&id);
-    if (id_ok<=0) { printf("CMS: Please provide a valid ID for UPDATE.\n"); return; }
+    if (id_ok<=0) { printf("CMS: Please provide a valid 7-digit numeric ID for UPDATE.\n"); return; }
     int idx=find_index_by_id(id);
     if (idx<0) { printf("CMS: The record with ID=%d does not exist.\n", id); return; }
 
@@ -377,8 +511,16 @@ static void cmd_update(const char* line) {
     if (!has_name && !has_prog && !has_mark) { printf("CMS: Nothing to update. Provide NAME/PROGRAMME/MARK.\n"); return; }
 
     Student before = records[idx];
-    if (has_name) { strncpy(records[idx].name,s_name,MAX_NAME-1); records[idx].name[MAX_NAME-1]=0; }
-    if (has_prog) { strncpy(records[idx].programme,s_prog,MAX_PROG-1); records[idx].programme[MAX_PROG-1]=0; }
+    if (has_name) { 
+        normalise_caps(s_name);
+        strncpy(records[idx].name,s_name,MAX_NAME-1); 
+        records[idx].name[MAX_NAME-1]=0; 
+    }
+    if (has_prog) { 
+        normalise_caps(s_prog);
+        strncpy(records[idx].programme,s_prog,MAX_PROG-1); 
+        records[idx].programme[MAX_PROG-1]=0; 
+    }
     if (has_mark) { records[idx].mark=mark; }
 
     printf("CMS: The record with ID=%d is successfully updated.\n", id);
@@ -389,7 +531,7 @@ static void cmd_update(const char* line) {
 
 static void cmd_delete(const char* line) {
     int id; int id_ok = parse_and_validate_id(line,&id);
-    if (id_ok<=0) { printf("CMS: Please provide a valid ID for DELETE.\n"); return; }
+    if (id_ok<=0) { printf("CMS: Please provide a valid 7-digit numeric ID for DELETE.\n"); return; }
     int idx=find_index_by_id(id);
     if (idx<0) { printf("CMS: The record with ID=%d does not exist.\n", id); return; }
 
@@ -504,6 +646,7 @@ int main(void) {
         printf("You: ");
         if (!fgets(line,sizeof(line),stdin)) break;
         trim(line); if (!line[0]) continue;
+        history_add(line);
         char cmd[MAX_LINE]; strncpy(cmd,line,sizeof(cmd)-1); cmd[sizeof(cmd)-1]=0;
         char up[MAX_LINE]; strncpy(up,line,sizeof(up)-1); up[sizeof(up)-1]=0; strtoupper_inplace(up);
 
@@ -526,6 +669,8 @@ int main(void) {
             char* args = cmd+8; cmd_show_all(args);
         } else if (strncmp(up,"SHOW PROGRAMME SUMMARY",22)==0) {
             cmd_show_programme_summary();
+        } else if (strncmp(up,"SHOW PROGRAMME",14)==0) {
+            cmd_show_programme_exact(cmd);
         } else if (strncmp(up,"SHOW SUMMARY",12)==0) {
             cmd_show_summary();
         } else if (strncmp(up,"INSERT",6)==0) {
@@ -542,6 +687,8 @@ int main(void) {
             if (strstr(up,"ON")) { autosave_on=1; printf("CMS: AUTOSAVE is ON.\n"); }
             else if (strstr(up,"OFF")) { autosave_on=0; printf("CMS: AUTOSAVE is OFF.\n"); }
             else { printf("CMS: Usage → SET AUTOSAVE ON|OFF\n"); }
+        } else if (strncmp(up,"EXPORT",6)==0) {
+            cmd_export_csv(cmd);
         } else if (strncmp(up,"SAVE",4)==0) {
             if (!db_filename[0]) { printf("CMS: Please OPEN <TeamName> first.\n"); }
             else {
@@ -550,6 +697,8 @@ int main(void) {
             }
         } else if (strncmp(up,"UNDO",4)==0) {
             cmd_undo();
+        } else if (strncmp(up,"HISTORY",7)==0) {
+            cmd_history();
         } else {
             printf("CMS: Unknown command. Type HELP.\n");
         }
