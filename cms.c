@@ -294,8 +294,23 @@ static void maybe_autosave(void) {
     }
 }
 
-static void print_record_header(void) { printf("ID\tName\tProgramme\tMark\n"); }
-static void print_record(const Student* s) { printf("%d\t%s\t%s\t%.2f\n", s->id, s->name, s->programme, s->mark); }
+static void print_record_header(void) {
+    /* Fixed-width columns so long names/programmes do not break alignment.
+       Names/programmes may be visually truncated in SHOW ALL but the full value
+       remains stored and is visible via QUERY. */
+    printf("%-7s  %-35s  %-25s  %-5s\n",
+           "ID", "Name", "Programme", "Mark");
+}
+
+static void print_record(const Student* s) {
+    printf("%07d  %-35.35s  %-25.25s  %5.2f\n",
+           s->id,
+           s->name,
+           s->programme,
+           s->mark);
+}
+
+
 
 static void cmd_show_all(const char* args) {
     Student* tmp = (Student*)malloc(sizeof(Student)*(size_t)n_records);
